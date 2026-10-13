@@ -1,0 +1,29 @@
+# Dependencies and generated output are rebuilt inside the image
+node_modules
+dist
+coverage
+*.tsbuildinfo
+
+# Secrets and runtime data must never enter the build context
+.env
+.env.*
+secrets
+data
+backups
+*.sqlite*
+*.db*
+*.log
+
+# Not needed to build the image
+.git
+.github
+*.bundle
+docs
+deploy
+*.md
+Dockerfile
+.dockerignore
+compose*.yaml
+.vscode
+.idea
+.DS_Store

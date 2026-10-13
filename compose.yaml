@@ -1,0 +1,72 @@
+# Aswaqi — Docker Compose deployment.
+# Settings come from .env next to this file (see .env.docker.example).
+#
+#   docker compose up -d --build              app only, on 127.0.0.1:3000
+#   docker compose --profile https up -d      app + Caddy with automatic HTTPS for $DOMAIN
+name: aswaqi
+
+x-logging: &logging
+  driver: json-file
+  options:
+    max-size: "10m"
+    max-file: "3"
+
+services:
+  aswaqi:
+    image: ${ASWAQI_IMAGE:-aswaqi:local}
+    build:
+      context: .
+      target: runtime
+    init: true
+    restart: unless-stopped
+    ports:
+      # 127.0.0.1 = this machine only (use with a reverse proxy).
+      # 0.0.0.0   = reachable from the shop's local network.
+      - "${BIND_ADDRESS:-127.0.0.1}:${PORT:-3000}:3000"
+    environment:
+      APP_URL: ${APP_URL:-http://localhost:3000}
+      ALLOWED_ORIGINS: ${ALLOWED_ORIGINS:-}
+      TRUST_PROXY: ${TRUST_PROXY:-false}
+      SESSION_HOURS: ${SESSION_HOURS:-12}
+      BACKUP_INTERVAL_HOURS: ${BACKUP_INTERVAL_HOURS:-24}
+      BACKUP_KEEP: ${BACKUP_KEEP:-14}
+      OWNER_EMAIL: ${OWNER_EMAIL:-}
+      OWNER_PASSWORD_FILE: ${OWNER_PASSWORD_FILE:-}
+    volumes:
+      - aswaqi_data:/app/data
+      - aswaqi_backups:/app/backups
+    # Hardening: immutable filesystem except the volumes, no Linux capabilities.
+    read_only: true
+    tmpfs:
+      - /tmp
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
+    stop_grace_period: 15s
+    logging: *logging
+
+  caddy:
+    image: caddy:2
+    profiles: ["https"]
+    restart: unless-stopped
+    ports:
+      - "80:80"
+      - "443:443"
+      - "443:443/udp"
+    environment:
+      DOMAIN: ${DOMAIN:-}
+    volumes:
+      - ./deploy/Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy_data:/data
+      - caddy_config:/config
+    depends_on:
+      aswaqi:
+        condition: service_healthy
+    logging: *logging
+
+volumes:
+  aswaqi_data:
+  aswaqi_backups:
+  caddy_data:
+  caddy_config:
