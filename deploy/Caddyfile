@@ -1,0 +1,11 @@
+# Used by `docker compose --profile https up -d`.
+# Caddy obtains and renews a TLS certificate for $DOMAIN automatically.
+# The domain's DNS must point at this server, and ports 80/443 must be open.
+# In .env set: DOMAIN=shop.example.com  APP_URL=https://shop.example.com  TRUST_PROXY=true
+{$DOMAIN} {
+	encode zstd gzip
+	request_body {
+		max_size 1MB
+	}
+	reverse_proxy aswaqi:3000
+}
