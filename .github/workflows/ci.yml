@@ -1,0 +1,97 @@
+name: Aswaqi checks
+on:
+  push:
+    branches: [main]
+    tags: ['v*']
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+          cache: npm
+      - run: npm ci
+      - run: npm run typecheck
+      - run: npm run build
+      - run: npm test
+      - name: Committed build output is up to date
+        run: git diff --exit-code -- dist shared/engine.js
+
+  docker:
+    needs: test
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+    steps:
+      - uses: actions/checkout@v4
+      - uses: docker/setup-buildx-action@v3
+      - name: Test stage inside the image
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          target: test
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+      - name: Build runtime image
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          target: runtime
+          load: true
+          tags: aswaqi:ci
+          build-args: |
+            VERSION=${{ github.ref_name }}
+            REVISION=${{ github.sha }}
+          cache-from: type=gha
+      - name: Smoke test the container
+        run: |
+          docker run -d --name aswaqi --read-only --tmpfs /tmp --cap-drop ALL \
+            -e OWNER_EMAIL=ci@example.com -e OWNER_PASSWORD=ci-password-12345 \
+            -p 127.0.0.1:3000:3000 aswaqi:ci
+          for i in $(seq 1 30); do
+            [ "$(docker inspect -f '{{.State.Health.Status}}' aswaqi)" = healthy ] && break; sleep 2
+          done
+          docker logs aswaqi
+          test "$(docker inspect -f '{{.State.Health.Status}}' aswaqi)" = healthy
+          curl -fsS -c jar -H 'Origin: http://localhost:3000' -H 'Content-Type: application/json' \
+            -d '{"email":"ci@example.com","password":"ci-password-12345"}' http://127.0.0.1:3000/api/auth/login
+          curl -fsS -b jar http://127.0.0.1:3000/api/store | grep -q '"role":"manager"'
+          docker exec aswaqi node scripts/backup.js
+      - name: Log in to GitHub Container Registry
+        if: github.event_name != 'pull_request'
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      - id: meta
+        if: github.event_name != 'pull_request'
+        uses: docker/metadata-action@v5
+        with:
+          images: ghcr.io/${{ github.repository }}
+          tags: |
+            type=raw,value=latest,enable={{is_default_branch}}
+            type=sha,format=short
+            type=semver,pattern={{version}}
+      - name: Publish image
+        if: github.event_name != 'pull_request'
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          target: runtime
+          push: true
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+          build-args: |
+            VERSION=${{ github.ref_name }}
+            REVISION=${{ github.sha }}
+          cache-from: type=gha
