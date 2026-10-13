@@ -69,8 +69,10 @@ test('in GitHub Codespaces the forwarded https URL is used and accepted automati
  try{
   assert.equal(app.url,'https://shiny-orbit-abc-3000.app.github.dev');
   app.server.listen(0,'127.0.0.1');await once(app.server,'listening');const base='http://127.0.0.1:'+app.server.address().port;
-  const setup=origin=>fetch(base+'/api/setup',{method:'POST',headers:{'Content-Type':'application/json',Origin:origin},body:JSON.stringify({username:'admin',password:'codespace-pass-1'})});
+  const setup=(origin,extra={})=>fetch(base+'/api/setup',{method:'POST',headers:{'Content-Type':'application/json',Origin:origin,...extra},body:JSON.stringify({username:'admin',password:'codespace-pass-1'})});
   assert.equal((await setup('https://evil.example')).status,403);
-  const ok=await setup('https://shiny-orbit-abc-3000.app.github.dev');assert.equal(ok.status,200);assert.match(ok.headers.get('set-cookie'),/Secure/);
+  // The Codespaces proxy rewrites Origin to https://localhost:<port>; accept it only with the codespace's forwarded host.
+  assert.equal((await setup('https://localhost:3000',{'X-Forwarded-Host':'evil.example'})).status,403);
+  const ok=await setup('https://localhost:3000',{'X-Forwarded-Host':'shiny-orbit-abc-3000.app.github.dev'});assert.equal(ok.status,200);assert.match(ok.headers.get('set-cookie'),/Secure/);
  }finally{for(const key of ['CODESPACE_NAME','GITHUB_CODESPACES_PORT_FORWARDING_DOMAIN','APP_URL','PORT']){if(key in saved)process.env[key]=saved[key];else delete process.env[key]}await app.close();rmSync(dir,{recursive:true,force:true})}
 });
