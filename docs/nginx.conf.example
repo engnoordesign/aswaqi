@@ -1,0 +1,14 @@
+# HTTP example for a reverse proxy. Configure TLS using your hosting provider
+# or Certbot before enabling public access; set APP_URL to the final HTTPS URL.
+server {
+    listen 80;
+    server_name supermarket.example.com;
+    client_max_body_size 1m;
+    location / {
+        proxy_pass http://127.0.0.1:3000;
+        proxy_http_version 1.1;
+        proxy_set_header Host $host;
+        proxy_set_header X-Forwarded-Proto $scheme;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+    }
+}
