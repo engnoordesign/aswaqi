@@ -20,6 +20,9 @@ export function createApp(options={}){
  const allowedOrigins=new Set([appUrl.origin]);
  // Running locally: accept both http://localhost:PORT and http://127.0.0.1:PORT.
  if(codespaceUrl&&appUrl.origin===codespaceUrl)for(const host of ['localhost','127.0.0.1'])allowedOrigins.add(`http://${host}:${process.env.PORT||3000}`);
+ // The Codespaces port proxy rewrites Origin to https://localhost:<port> and passes the real host in X-Forwarded-Host.
+ const codespaceHost=codespaceUrl&&appUrl.origin===codespaceUrl?new URL(codespaceUrl).host:'';
+ const originAllowed=req=>allowedOrigins.has(req.headers.origin)||(codespaceHost&&req.headers.origin===`https://localhost:${process.env.PORT||3000}`&&req.headers['x-forwarded-host']===codespaceHost);
  if(['localhost','127.0.0.1','[::1]'].includes(appUrl.hostname))for(const host of ['localhost','127.0.0.1','[::1]'])allowedOrigins.add(`${appUrl.protocol}//${host}${appUrl.port?':'+appUrl.port:''}`);if(process.env.NODE_ENV!=='production')allowedOrigins.add('http://localhost:5173');
  // Extra origins, e.g. the shop's LAN address: ALLOWED_ORIGINS=http://192.168.1.20:3000,http://pos.local:3000
  for(const entry of String(options.allowedOrigins??process.env.ALLOWED_ORIGINS??'').split(',').map(v=>v.trim()).filter(Boolean)){let origin;try{origin=new URL(entry)}catch{throw Error('ALLOWED_ORIGINS contains an invalid URL: '+entry)}if(!['http:','https:'].includes(origin.protocol))throw Error('ALLOWED_ORIGINS entries must be http or https');allowedOrigins.add(origin.origin)}
@@ -45,7 +48,7 @@ export function createApp(options={}){
    const url=new URL(req.url,appUrl),path=url.pathname;
    if(path==='/api/health'&&req.method==='GET'){try{db.prepare('SELECT 1').get();return json(res,200,{ok:true,database:'ok'})}catch{return json(res,503,{ok:false,database:'unavailable'})}}
    if(path.startsWith('/api/')&&req.method!=='GET'&&req.method!=='HEAD'){
-    if(!allowedOrigins.has(req.headers.origin))throw failure('Origin not allowed | مصدر الطلب غير مسموح',403);
+    if(!originAllowed(req))throw failure('Origin not allowed | مصدر الطلب غير مسموح',403);
     if(!String(req.headers['content-type']||'').startsWith('application/json'))throw failure('JSON required',415);
    }
    const startSession=username=>{const token=sessionToken();db.prepare('DELETE FROM sessions WHERE expires<?').run(Date.now());db.prepare('INSERT INTO sessions(token_hash,username,expires) VALUES(?,?,?)').run(digest(token),username,Date.now()+maxAge*1000);return cookie(token)};
