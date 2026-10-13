@@ -1,6 +1,6 @@
 export const round = (v) => Math.round((v + Number.EPSILON) * 100) / 100;
 export function initial(owner) { return { owner, settings: { name: 'Aswaqi · أسواقي', currency: 'IQD', tax: 0, receipt: 'Thank you! · شكراً لزيارتكم' }, products: [], lots: [], transactions: [], users: [], audit: [] }; }
-export function roleFor(s, email) { return email === s.owner ? 'manager' : s.users.find(u => u.email === email)?.role; }
+export function roleFor(s, username) { return username === s.owner ? 'manager' : s.users.find(u => u.username === username)?.role; }
 function assert(v, msg = 'Invalid value | قيمة غير صالحة') { if (!v)
     throw Error(msg); }
 function num(v, min = 0) { v = Number(v); assert(Number.isFinite(v) && v >= min); return v; }
@@ -11,8 +11,8 @@ const today = () => new Date().toISOString().slice(0, 10);
 export function available(s, id, loc = 'shown') { return s.lots.filter(l => l.product === id && l.location === loc && (!l.expiry || l.expiry >= today())).reduce((a, l) => a + l.qty, 0); }
 function journal(s, user, kind, amount, entries, other = {}) { assert(Math.abs(entries.reduce((a, e) => a + e.debit - e.credit, 0)) < .02, 'Unbalanced journal'); s.transactions.unshift({ id: crypto.randomUUID(), date: new Date().toISOString(), kind, amount: round(amount), entries, user, party: '', method: 'cash', lines: [], note: '', ...other }); }
 const e = (account, debit = 0, credit = 0) => ({ account, debit: round(debit), credit: round(credit) });
-export function act(s, email, action, p) {
-    const role = roleFor(s, email);
+export function act(s, username, action, p) {
+    const role = roleFor(s, username);
     const allowed = { product: ['manager', 'storage'], purchase: ['manager', 'cashier'], sale: ['manager', 'cashier'], transfer: ['manager', 'storage'], expense: ['manager', 'accountant'], settle: ['manager', 'accountant'], user: ['manager'], removeUser: ['manager'], opening: ['manager', 'accountant'], refund: ['manager', 'cashier'], settings: ['manager'], demo: ['manager'] };
     assert(role && allowed[action]?.includes(role), 'Access denied | غير مسموح');
     if (action === 'product') {
@@ -31,7 +31,7 @@ export function act(s, email, action, p) {
         const party = str(p.party);
         const method = p.method === 'credit' ? 'credit' : 'cash';
         s.lots.push({ id: crypto.randomUUID(), product: p.product, qty, cost, location: 'stock', expiry: p.expiry || '' });
-        journal(s, email, 'purchase', amount, [e('inventory', amount), e(method === 'credit' ? 'payable' : 'cash', 0, amount)], { party, method, lines: [{ product: p.product, qty, cost }] });
+        journal(s, username, 'purchase', amount, [e('inventory', amount), e(method === 'credit' ? 'payable' : 'cash', 0, amount)], { party, method, lines: [{ product: p.product, qty, cost }] });
     }
     if (action === 'sale') {
         assert(Array.isArray(p.lines) && p.lines.length > 0 && p.lines.length <= 200);
@@ -65,7 +65,7 @@ export function act(s, email, action, p) {
         const party = method === 'credit' ? str(p.party) : p.party || 'Walk-in';
         if (method === 'cash')
             assert(num(p.tendered) >= amount, 'Cash received is insufficient | المبلغ غير كافٍ');
-        journal(s, email, 'sale', amount, [e(method === 'credit' ? 'receivable' : method === 'card' ? 'bank' : 'cash', amount), e('sales', 0, net), e('tax', 0, tax), e('cogs', cost), e('inventory', 0, cost)], { party, method, lines, note: p.note || '', discount, tax, tendered: num(p.tendered || 0), change: method === 'cash' ? round(num(p.tendered) - amount) : 0 });
+        journal(s, username, 'sale', amount, [e(method === 'credit' ? 'receivable' : method === 'card' ? 'bank' : 'cash', amount), e('sales', 0, net), e('tax', 0, tax), e('cogs', cost), e('inventory', 0, cost)], { party, method, lines, note: p.note || '', discount, tax, tendered: num(p.tendered || 0), change: method === 'cash' ? round(num(p.tendered) - amount) : 0 });
     }
     if (action === 'transfer') {
         const l = s.lots.find(x => x.id === p.lot);
@@ -79,7 +79,7 @@ export function act(s, email, action, p) {
         s.lots.push({ ...l, id: crypto.randomUUID(), qty, location: p.to });
         if (p.to === 'expired') {
             const amount = round(qty * l.cost);
-            journal(s, email, 'writeoff', amount, [e('waste', amount), e('inventory', 0, amount)], { lines: [{ product: l.product, qty }], note: str(p.note || 'Expired stock') });
+            journal(s, username, 'writeoff', amount, [e('waste', amount), e('inventory', 0, amount)], { lines: [{ product: l.product, qty }], note: str(p.note || 'Expired stock') });
         }
     }
     if (action === 'refund') {
@@ -93,35 +93,35 @@ export function act(s, email, action, p) {
                 s.lots.push({ id: crypto.randomUUID(), product: line.product, qty: a.qty, cost: a.cost, expiry: a.expiry, location: 'stock' });
             }
         }
-        journal(s, email, 'refund', tx.amount, tx.entries.map(x => e(x.account, x.credit, x.debit)), { party: tx.party, method: tx.method, lines: tx.lines, note: tx.id });
+        journal(s, username, 'refund', tx.amount, tx.entries.map(x => e(x.account, x.credit, x.debit)), { party: tx.party, method: tx.method, lines: tx.lines, note: tx.id });
     }
     if (action === 'opening') {
         assert(!s.transactions.some(t => t.kind === 'capital'), 'Opening cash already entered | تم إدخال الصندوق الافتتاحي');
         const amount = round(num(p.amount, .01));
-        journal(s, email, 'capital', amount, [e('cash', amount), e('equity', 0, amount)], { note: 'Opening cash · الصندوق الافتتاحي' });
+        journal(s, username, 'capital', amount, [e('cash', amount), e('equity', 0, amount)], { note: 'Opening cash · الصندوق الافتتاحي' });
     }
     if (action === 'expense') {
         const amount = round(num(p.amount, .01));
-        journal(s, email, 'expense', amount, [e('expenses', amount), e('cash', 0, amount)], { note: str(p.note), party: p.party || '' });
+        journal(s, username, 'expense', amount, [e('expenses', amount), e('cash', 0, amount)], { note: str(p.note), party: p.party || '' });
     }
     if (action === 'settle') {
         const amount = round(num(p.amount, .01)), party = str(p.party);
         assert(['receivable', 'payable'].includes(p.account));
         const balance = s.transactions.filter(t => t.party === party).flatMap(t => t.entries).filter(e => e.account === p.account).reduce((a, e) => a + (p.account === 'receivable' ? e.debit - e.credit : e.credit - e.debit), 0);
         assert(amount <= balance + .001, 'Payment exceeds outstanding balance | المبلغ يتجاوز الرصيد');
-        journal(s, email, 'payment', amount, p.account === 'receivable' ? [e('cash', amount), e('receivable', 0, amount)] : [e('payable', amount), e('cash', 0, amount)], { party, note: p.account });
+        journal(s, username, 'payment', amount, p.account === 'receivable' ? [e('cash', amount), e('receivable', 0, amount)] : [e('payable', amount), e('cash', 0, amount)], { party, note: p.account });
     }
     if (action === 'user') {
-        const mail = str(p.email).toLowerCase();
-        assert(/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(mail));
-        assert(mail !== s.owner, 'Owner access cannot be changed');
+        const login = str(p.username).toLowerCase();
+        assert(/^[\p{L}\p{N}][\p{L}\p{N}._@-]{2,63}$/u.test(login), 'Username must be 3–64 letters or numbers, no spaces | اسم المستخدم من ٣ إلى ٦٤ حرفاً أو رقماً بدون مسافات');
+        assert(login !== s.owner, 'Owner access cannot be changed');
         assert(['manager', 'cashier', 'storage', 'accountant'].includes(p.role));
-        s.users = s.users.filter(u => u.email !== mail);
-        s.users.push({ email: mail, name: str(p.name), role: p.role });
+        s.users = s.users.filter(u => u.username !== login);
+        s.users.push({ username: login, name: str(p.name), role: p.role });
     }
     if (action === 'removeUser') {
-        assert(p.email !== s.owner);
-        s.users = s.users.filter(u => u.email !== p.email);
+        assert(p.username !== s.owner);
+        s.users = s.users.filter(u => u.username !== p.username);
     }
     if (action === 'settings') {
         assert(!s.transactions.length || p.currency === s.settings.currency, 'Currency is locked after the first transaction | العملة مقفلة بعد أول عملية');
@@ -137,9 +137,9 @@ export function act(s, email, action, p) {
             value += qty * d[5];
             s.lots.push({ id: crypto.randomUUID(), product: id, qty, cost: d[5], location: loc, expiry: new Date(Date.now() + (i === 0 ? 5 : 120 + i) * 86400000).toISOString().slice(0, 10) });
         } });
-        journal(s, email, 'opening', value, [e('inventory', value), e('equity', 0, value)], { note: 'Sample opening inventory · مخزون تجريبي' });
+        journal(s, username, 'opening', value, [e('inventory', value), e('equity', 0, value)], { note: 'Sample opening inventory · مخزون تجريبي' });
     }
-    s.audit.unshift({ date: new Date().toISOString(), user: email, action });
+    s.audit.unshift({ date: new Date().toISOString(), user: username, action });
     return s;
 }
 export function visible(s, role) { if (role === 'manager')
