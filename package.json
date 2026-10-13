@@ -5,7 +5,7 @@
   "type": "module",
   "engines": { "node": ">=24.0.0" },
   "scripts": {
-    "start": "node --env-file-if-exists=.env server.js",
+    "start": "node --disable-warning=ExperimentalWarning --env-file-if-exists=.env server.js",
     "dev": "vite --host 127.0.0.1",
     "build": "node scripts/build-engine.js && vite build",
     "typecheck": "tsc --noEmit",

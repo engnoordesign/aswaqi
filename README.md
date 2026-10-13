@@ -4,23 +4,21 @@ Standalone bilingual supermarket management: React frontend, Node.js `server.js`
 
 This is a separate self-hosted repository. It does not require ChatGPT, Cloudflare, Sites or an external database service. It starts with an empty store; data from the hosted version is not copied. The frontend production build is included, so the basic server needs **no npm runtime packages**.
 
-## Quick start — Node.js 24 or later
+## Run it on your computer (local, no internet needed)
 
-```bash
-# Linux / macOS
-cp .env.example .env
-# Windows Command Prompt: copy .env.example .env
+1. Install **Node.js 24 or newer** from [nodejs.org](https://nodejs.org).
+2. Download this repository (green **Code** button → **Download ZIP**) and unzip it.
+3. Start Aswaqi:
+   - **Windows:** double-click **`start.bat`**.
+   - **macOS / Linux:** run `sh start.sh` in a terminal (or `npm start`).
+4. Your browser opens **http://localhost:3000**. The first time, a **Set up your store** screen appears: choose the manager's **username** and **password** (12+ characters). You're signed in straight away.
+5. Add staff under **Team & access** — each person gets their own username and password.
 
-# Create the first manager. Password is entered privately in the terminal.
-node --env-file-if-exists=.env scripts/create-owner.js --email manager@example.com
+Keep the start window open while you use Aswaqi; close it (or press Ctrl+C) to stop. Nothing is installed with npm and no `.env` file is needed. Your data stays on this computer in `data/aswaqi.sqlite`, and a backup snapshot is written to `backups/` every 24 hours (14 kept).
 
-# Start with the included frontend build
-npm start
-```
+By default only this computer can open Aswaqi. To let other tills or phones on the shop Wi-Fi use it, copy `.env.example` to `.env`, set `HOST=0.0.0.0` and add this computer's address, e.g. `ALLOWED_ORIGINS=http://192.168.1.20:3000`, then open that address on the other devices.
 
-Open **http://localhost:3000**, then sign in with the account you created. There is no default password. Node 24 may show an informational warning for its SQLite API.
-
-Set `APP_URL` in `.env` to the exact URL users will open, including scheme and port. A mismatched URL will cause request-origin checks to reject login. Keep `HOST=127.0.0.1` behind a local reverse proxy. `APP_URL=https://...` enables Secure cookies. Public deployments must use HTTPS.
+Prefer the terminal for the first account? `npm run owner:create -- --username admin` works too (before the first start in the browser).
 
 ## Rebuild or develop
 
@@ -53,16 +51,15 @@ For frontend development, set `NODE_ENV=development` in `.env`, run `npm start` 
 
 Pages poll every 15 seconds; saved changes update immediately. Concurrent submissions are revision-checked in a SQLite transaction. Stale writes are rejected instead of overwriting another user's work. Expired display batches are blocked from checkout. Sales use earliest-expiring batches first and post actual batch cost. Every journal is balanced.
 
-## Docker
+## Docker (optional, for a server)
 
-The recommended way to run Aswaqi on a server. Full guide: **[docs/DOCKER.md](docs/DOCKER.md)**.
+Not needed for local use. To run Aswaqi on a server instead, see the full guide: **[docs/DOCKER.md](docs/DOCKER.md)**.
 
 ```bash
 cp .env.docker.example .env        # set APP_URL; BIND_ADDRESS=0.0.0.0 for shop-LAN access
 docker compose build
-docker compose run --rm aswaqi node scripts/create-owner.js --email manager@example.com
 docker compose up -d
-docker compose ps                  # wait for "healthy"
+docker compose ps                  # wait for "healthy", then open APP_URL and create the manager
 ```
 
 What the container setup gives you:
@@ -73,7 +70,7 @@ What the container setup gives you:
 - **Shop LAN or internet** — `BIND_ADDRESS`/`ALLOWED_ORIGINS` for tills on the local network, or `docker compose --profile https up -d` for Caddy with automatic HTTPS certificates.
 - **Unattended first run** — create the first manager from a Docker secret (`compose.secrets.yaml`) when there is no terminal.
 - **Rotated logs** (3 × 10 MB) so the disk doesn't fill up.
-- **CI-built image** — every push to `main` is tested and published to `ghcr.io/engnoordesign/aswaqi` (private).
+- **CI-built image (optional)** — every push to `main` runs the tests; the image is only built and published to the private `ghcr.io/engnoordesign/aswaqi` when you push a `v*` tag or run the workflow by hand.
 
 Data lives in named volumes and survives rebuilds and container replacement. Do not run `docker compose down -v` unless you intend to delete everything.
 
@@ -99,12 +96,12 @@ docker compose run --rm --no-deps aswaqi node scripts/restore.js --from /app/bac
 
 The script checks the snapshot's integrity, asks for confirmation, and moves the current database and its `-wal`/`-shm` files into `data/pre-restore-<time>/` rather than deleting them. Passwords from the snapshot are restored too. Do not copy a live SQLite main file as a backup; use the backup command.
 
-Reset a forgotten password on the server:
+Reset a forgotten password (run in the Aswaqi folder on the computer that runs it):
 
 ```bash
-npm run password:reset -- --email manager@example.com
+npm run password:reset -- --username admin
 # Docker equivalent:
-docker compose exec aswaqi node scripts/reset-password.js --email manager@example.com
+docker compose exec aswaqi node scripts/reset-password.js --username admin
 ```
 
 The password prompt is hidden. For scripts, pipe the password and add `--password-stdin` (also supported by `create-owner.js`). Resetting or changing a password revokes that account's active sessions. Removing a staff member revokes access immediately.
@@ -116,14 +113,15 @@ server.js                  HTTP server, authentication, API and static serving
 backend/database.js        SQLite schema, transactions and state access
 backend/security.js        Password hashing, session tokens and validation
 frontend/App.tsx           Bilingual supermarket interface
-frontend/main.tsx          Login, logout and password-change screens
+frontend/main.tsx          First-run setup, login, logout and password-change screens
 frontend/styles.css        Responsive styling and RTL support
 shared/engine.ts            Typed business rules used by frontend and backend
 shared/engine.js            Generated backend business rules
 backend/backup.js          Snapshots, retention and scheduled backups
-backend/owner.js           First-manager creation and container first-run bootstrap
+backend/owner.js           First-manager creation (browser setup, CLI and container bootstrap)
 scripts/                   Owner setup, password recovery, backup/restore, health probe, build
 tests/                    Business rules and HTTP integration tests
+start.bat / start.sh       Double-click / one-command local start
 dist/                     Included production frontend build
 Dockerfile                 Multi-stage image: deps → build → test → runtime
 compose.yaml               App service (+ optional Caddy HTTPS profile)
@@ -131,14 +129,14 @@ compose.secrets.yaml       Optional first-run manager from a Docker secret
 deploy/Caddyfile           Reverse proxy config for the https profile
 .env.docker.example        Docker settings template
 docs/DOCKER.md             Docker deployment, backup/restore and update guide
-.github/workflows/ci.yml   Tests, container smoke test and GHCR image publishing
+.github/workflows/ci.yml   Tests on push; container build/publish only on tags or manual run
 ```
 
 Edit `shared/engine.ts`, then run `npm run build` to regenerate `shared/engine.js` and the frontend. Include both source and generated output when committing releases. Never commit `.env`, the database, backups or real credentials.
 
 ## Repository
 
-Private repository: `github.com/engnoordesign/aswaqi`. Clone with `git clone https://github.com/engnoordesign/aswaqi.git`. GitHub Actions runs the checks on every push and publishes the container image to the private `ghcr.io/engnoordesign/aswaqi` package from `main`.
+Private repository: `github.com/engnoordesign/aswaqi`. Clone with `git clone https://github.com/engnoordesign/aswaqi.git`. GitHub Actions runs the tests on every push. The container image is published to the private `ghcr.io/engnoordesign/aswaqi` package only for `v*` tags or a manual run.
 
 ## Scope and limitations
 
@@ -154,8 +152,8 @@ Private repository: `github.com/engnoordesign/aswaqi`. Clone with `git clone htt
 
 ## Verification
 
-TypeScript checks, production frontend build and 11 tests pass: six business-engine tests, two server/security tests and three container tests (first-run bootstrap from a secret file, backup snapshot and pruning, database-aware health, extra allowed origins and proxy-aware rate limiting). The same suite runs inside `docker build --target test`.
+TypeScript checks, production frontend build and 13 tests pass: six business-engine tests, two server/security tests, two setup tests (browser first-run setup with username sign-in; migration of databases from the earlier email-based version) and three container tests (first-run bootstrap from a secret file, backup snapshot and pruning, database-aware health, extra allowed origins and proxy-aware rate limiting). The same suite runs inside `docker build --target test`.
 
-The Docker image and Compose stack were run end to end: healthy status, read-only root filesystem and non-root user, login from `APP_URL` and an `ALLOWED_ORIGINS` LAN address (foreign origins rejected), store writes, manual backup, `--password-stdin` reset, data persisting through `docker compose down`/`up`, and restore from a snapshot. The authoring environment could not pull from Docker Hub, so that run used a locally assembled Node 24.21 base image in place of `node:24-bookworm-slim`; the GitHub Actions workflow repeats a smoke test against the official base image. The Caddy HTTPS profile needs a real domain and was not run. Browser visual tests were not performed.
+The Docker image and Compose stack were run end to end: healthy status, read-only root filesystem and non-root user, login from `APP_URL` and an `ALLOWED_ORIGINS` LAN address (foreign origins rejected), store writes, manual backup, `--password-stdin` reset, data persisting through `docker compose down`/`up`, and restore from a snapshot. The authoring environment could not pull from Docker Hub, so that run used a locally assembled Node 24.21 base image in place of `node:24-bookworm-slim`; the GitHub Actions workflow repeats a smoke test against the official base image. The Caddy HTTPS profile needs a real domain and was not run. The local start (setup screen → manager created → staff sign-in with a username) was checked in a browser. The Docker run described above predates the username change.
 
 See [Arabic setup guide](docs/README.ar.md).
