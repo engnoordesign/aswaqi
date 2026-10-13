@@ -1,4 +1,6 @@
 name: Aswaqi checks
+# Pushes to main only run the tests. The Docker image is built and published to GHCR
+# only when you push a version tag (v1.2.3) or start this workflow by hand (Actions → Run workflow).
 on:
   push:
     branches: [main]
@@ -27,6 +29,7 @@ jobs:
 
   docker:
     needs: test
+    if: github.event_name == 'workflow_dispatch' || startsWith(github.ref, 'refs/tags/v')
     runs-on: ubuntu-latest
     permissions:
       contents: read
@@ -55,7 +58,7 @@ jobs:
       - name: Smoke test the container
         run: |
           docker run -d --name aswaqi --read-only --tmpfs /tmp --cap-drop ALL \
-            -e OWNER_EMAIL=ci@example.com -e OWNER_PASSWORD=ci-password-12345 \
+            -e OWNER_USERNAME=ci -e OWNER_PASSWORD=ci-password-12345 \
             -p 127.0.0.1:3000:3000 aswaqi:ci
           for i in $(seq 1 30); do
             [ "$(docker inspect -f '{{.State.Health.Status}}' aswaqi)" = healthy ] && break; sleep 2
@@ -63,7 +66,7 @@ jobs:
           docker logs aswaqi
           test "$(docker inspect -f '{{.State.Health.Status}}' aswaqi)" = healthy
           curl -fsS -c jar -H 'Origin: http://localhost:3000' -H 'Content-Type: application/json' \
-            -d '{"email":"ci@example.com","password":"ci-password-12345"}' http://127.0.0.1:3000/api/auth/login
+            -d '{"username":"ci","password":"ci-password-12345"}' http://127.0.0.1:3000/api/auth/login
           curl -fsS -b jar http://127.0.0.1:3000/api/store | grep -q '"role":"manager"'
           docker exec aswaqi node scripts/backup.js
       - name: Log in to GitHub Container Registry
