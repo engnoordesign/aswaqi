@@ -12,11 +12,14 @@ const json=(res,status,data,headers={})=>{res.writeHead(status,{'Content-Type':'
 async function body(req){let size=0;const chunks=[];for await(const chunk of req){size+=chunk.length;if(size>1024*1024)throw Object.assign(Error('Request too large'),{status:413});chunks.push(chunk)}try{return JSON.parse(Buffer.concat(chunks).toString('utf8'))}catch{throw Object.assign(Error('Invalid JSON'),{status:400})}}
 const failure=(message,status=400)=>Object.assign(Error(message),{status});
 export function createApp(options={}){
- const appUrl=new URL(options.appUrl||process.env.APP_URL||'http://localhost:'+(process.env.PORT||3000));
+ // In GitHub Codespaces the browser reaches the app through https://<codespace>-<port>.app.github.dev.
+ const codespaceUrl=process.env.CODESPACE_NAME&&process.env.GITHUB_CODESPACES_PORT_FORWARDING_DOMAIN?`https://${process.env.CODESPACE_NAME}-${process.env.PORT||3000}.${process.env.GITHUB_CODESPACES_PORT_FORWARDING_DOMAIN}`:'';
+ const appUrl=new URL(options.appUrl||process.env.APP_URL||codespaceUrl||'http://localhost:'+(process.env.PORT||3000));
  if(!['http:','https:'].includes(appUrl.protocol))throw Error('APP_URL must be http or https');
  const dist=resolve(options.distPath||resolve(root,'dist'));
  const allowedOrigins=new Set([appUrl.origin]);
  // Running locally: accept both http://localhost:PORT and http://127.0.0.1:PORT.
+ if(codespaceUrl&&appUrl.origin===codespaceUrl)for(const host of ['localhost','127.0.0.1'])allowedOrigins.add(`http://${host}:${process.env.PORT||3000}`);
  if(['localhost','127.0.0.1','[::1]'].includes(appUrl.hostname))for(const host of ['localhost','127.0.0.1','[::1]'])allowedOrigins.add(`${appUrl.protocol}//${host}${appUrl.port?':'+appUrl.port:''}`);if(process.env.NODE_ENV!=='production')allowedOrigins.add('http://localhost:5173');
  // Extra origins, e.g. the shop's LAN address: ALLOWED_ORIGINS=http://192.168.1.20:3000,http://pos.local:3000
  for(const entry of String(options.allowedOrigins??process.env.ALLOWED_ORIGINS??'').split(',').map(v=>v.trim()).filter(Boolean)){let origin;try{origin=new URL(entry)}catch{throw Error('ALLOWED_ORIGINS contains an invalid URL: '+entry)}if(!['http:','https:'].includes(origin.protocol))throw Error('ALLOWED_ORIGINS entries must be http or https');allowedOrigins.add(origin.origin)}
@@ -104,7 +107,7 @@ export function createApp(options={}){
   }catch(error){if(!res.headersSent){const status=error.status||400;json(res,status,{error:status>=500?'Server unavailable | الخادم غير متاح':error.message})}else res.end()}
  });
  server.requestTimeout=30000;server.headersTimeout=15000;
- return {server,db,close:()=>new Promise((resolve,reject)=>server.close(e=>{db.close();e?reject(e):resolve()}))};
+ return {server,db,url:appUrl.origin,close:()=>new Promise((resolve,reject)=>server.close(e=>{db.close();e?reject(e):resolve()}))};
 }
 if(process.argv[1]&&import.meta.url===pathToFileURL(resolve(process.argv[1])).href){
  // Local-first defaults: daily backups into ./backups (keeping 14) unless configured otherwise.
@@ -113,6 +116,6 @@ if(process.argv[1]&&import.meta.url===pathToFileURL(resolve(process.argv[1])).hr
  try{await bootstrapOwner(app.db)}catch(error){console.error('First-run setup failed: '+error.message);app.db.close();process.exit(1)}
  const stopBackups=scheduleBackups(app.db);
  app.server.on('error',error=>{console.error(`Cannot listen on ${host}:${port}: ${error.message}`);process.exit(1)});
- app.server.listen(port,host,()=>console.log(`Aswaqi is running. Open ${process.env.APP_URL||'http://localhost:'+port} in your browser. Press Ctrl+C to stop.`));
+ app.server.listen(port,host,()=>console.log(`Aswaqi is running. Open ${app.url} in your browser. Press Ctrl+C to stop.`));
  for(const signal of ['SIGINT','SIGTERM'])process.once(signal,()=>{console.log(`${signal} received, shutting down`);stopBackups();app.server.closeIdleConnections?.();app.server.close(()=>{app.db.close();process.exit(0)});setTimeout(()=>process.exit(1),10000).unref()});
 }
