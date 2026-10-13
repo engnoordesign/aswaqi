@@ -61,3 +61,16 @@ CREATE TABLE sessions(token_hash TEXT PRIMARY KEY,email TEXT NOT NULL REFERENCES
   assert.equal((await req('/api/auth/login',{method:'POST',payload:{username:'cash@shop.com',password:'old-cash-pass-12'}})).status,200);
  }finally{await app.close();rmSync(dir,{recursive:true,force:true})}
 });
+
+test('in GitHub Codespaces the forwarded https URL is used and accepted automatically',async()=>{
+ const dir=tmp();const saved={...process.env};
+ Object.assign(process.env,{CODESPACE_NAME:'shiny-orbit-abc',GITHUB_CODESPACES_PORT_FORWARDING_DOMAIN:'app.github.dev'});delete process.env.APP_URL;delete process.env.PORT;
+ const app=createApp({databasePath:join(dir,'db.sqlite')});
+ try{
+  assert.equal(app.url,'https://shiny-orbit-abc-3000.app.github.dev');
+  app.server.listen(0,'127.0.0.1');await once(app.server,'listening');const base='http://127.0.0.1:'+app.server.address().port;
+  const setup=origin=>fetch(base+'/api/setup',{method:'POST',headers:{'Content-Type':'application/json',Origin:origin},body:JSON.stringify({username:'admin',password:'codespace-pass-1'})});
+  assert.equal((await setup('https://evil.example')).status,403);
+  const ok=await setup('https://shiny-orbit-abc-3000.app.github.dev');assert.equal(ok.status,200);assert.match(ok.headers.get('set-cookie'),/Secure/);
+ }finally{for(const key of ['CODESPACE_NAME','GITHUB_CODESPACES_PORT_FORWARDING_DOMAIN','APP_URL','PORT']){if(key in saved)process.env[key]=saved[key];else delete process.env[key]}await app.close();rmSync(dir,{recursive:true,force:true})}
+});
