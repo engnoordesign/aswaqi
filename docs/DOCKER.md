@@ -15,24 +15,23 @@ Both survive `docker compose down`, image updates and container replacement. **`
 git clone https://github.com/engnoordesign/aswaqi.git && cd aswaqi
 cp .env.docker.example .env      # then edit APP_URL and friends
 docker compose build
-docker compose run --rm aswaqi node scripts/create-owner.js --email manager@example.com
 docker compose up -d
 ```
 
-`create-owner.js` asks for the password in the terminal (hidden). Open `APP_URL` and sign in.
+Open `APP_URL`: the first visit shows a **Set up your store** screen where you choose the manager's username and password. (Terminal alternative, before the first visit: `docker compose run --rm aswaqi node scripts/create-owner.js --username admin`.)
 
 **No terminal available** (Portainer, Coolify, a remote panel)? Let the container create the first manager on its first start, from a Docker secret:
 
 ```bash
 mkdir -p secrets && printf '%s' 'a-long-password-here' > secrets/owner_password
 sudo chown 1000:1000 secrets/owner_password && chmod 600 secrets/owner_password
-# in .env: OWNER_EMAIL=manager@example.com
+# in .env: OWNER_USERNAME=admin
 docker compose -f compose.yaml -f compose.secrets.yaml up -d
 docker compose logs aswaqi        # "First manager created for ..."
 rm secrets/owner_password         # then use plain `docker compose up -d` from now on
 ```
 
-Bootstrap only runs while the database is empty, so leaving `OWNER_EMAIL` set is harmless. `OWNER_PASSWORD=...` also works for throwaway test containers, but it stays visible in `docker inspect`, so prefer the secret file.
+Bootstrap only runs while the database is empty, so leaving `OWNER_USERNAME` set is harmless. `OWNER_PASSWORD=...` also works for throwaway test containers, but it stays visible in `docker inspect`, so prefer the secret file.
 
 ## 2. Choose how people reach it
 
@@ -73,14 +72,14 @@ Only enable `TRUST_PROXY` when the app port is *not* reachable directly; otherwi
 docker compose ps                         # status + health
 docker compose logs -f aswaqi             # live logs (rotated at 3 × 10 MB)
 docker compose exec aswaqi node scripts/backup.js
-docker compose exec aswaqi node scripts/reset-password.js --email manager@example.com
+docker compose exec aswaqi node scripts/reset-password.js --username admin
 ```
 
 Scripted password reset without a TTY:
 
 ```bash
 printf '%s\n' 'new-long-password' | docker compose exec -T aswaqi \
-  node scripts/reset-password.js --email manager@example.com --password-stdin
+  node scripts/reset-password.js --username admin --password-stdin
 ```
 
 ## 4. Backups
@@ -116,7 +115,7 @@ docker compose up -d --build
 docker compose ps        # wait for "healthy"
 ```
 
-**Using the image published by GitHub Actions** (built on every push to `main`): the package is private, so log in once with a GitHub token that has `read:packages`:
+**Using the image published by GitHub Actions** (built only when you push a `v*` tag or run the workflow manually from the Actions tab — a manual run on `main` updates `latest`): the package is private, so log in once with a GitHub token that has `read:packages`:
 
 ```bash
 echo "$TOKEN" | docker login ghcr.io -u engnoordesign --password-stdin
@@ -138,7 +137,7 @@ Tags: `latest` (main), `sha-<commit>` (every build), and `1.2.3` for `v1.2.3` gi
 | `SESSION_HOURS` | `12` | Login session length (max 168). |
 | `BACKUP_INTERVAL_HOURS` | `24` | Automatic snapshot interval; `0` disables. |
 | `BACKUP_KEEP` | `14` | Snapshots kept by automatic and `--keep` backups. |
-| `OWNER_EMAIL` / `OWNER_PASSWORD_FILE` | — | First-run manager creation. |
+| `OWNER_USERNAME` / `OWNER_PASSWORD_FILE` | — | Unattended first-run manager creation (otherwise use the setup screen). |
 | `DOMAIN` | — | Hostname for the `https` profile. |
 | `ASWAQI_IMAGE` | `aswaqi:local` | Image to run (e.g. the GHCR image). |
 
